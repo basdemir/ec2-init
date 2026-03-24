@@ -105,7 +105,7 @@ else
 fi
 
 # ── Failed module logs ────────────────────────────────────────────────────────
-if [[ "${#MISSING[@]:-0}" -gt 0 ]]; then
+if [[ "${#MISSING[@]}" -gt 0 ]]; then
     echo ""
     echo "  Failed module logs"
     for module in "${MISSING[@]}"; do
