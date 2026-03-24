@@ -17,6 +17,14 @@ packages:
 package_update: true
 package_upgrade: false
 
+# ── Swap (4 GB) ───────────────────────────────────────────────────────────────
+# Created early in boot before bootstrap runs — important for small instance types
+# where brew, SDKMAN, and nvm installs can exhaust physical RAM.
+swap:
+  filename: /swapfile
+  size: 4294967296   # 4 GB in bytes
+  maxsize: 4294967296
+
 # ── Write the fetch script to disk ────────────────────────────────────────────
 write_files:
   - path: /usr/local/sbin/ec2-init-fetch.sh
