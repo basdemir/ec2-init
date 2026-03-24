@@ -291,6 +291,19 @@ sudo bash /opt/ec2-init/tests/verify-all.sh --manifest full-dev
 
 ---
 
+## Design decisions
+
+| Decision | Why |
+|---|---|
+| `package_upgrade: false` in cloud-init | Upgrading all packages at boot adds minutes and may trigger interactive kernel/grub prompts. Pin specific versions in modules instead. |
+| Modules install one by one (not batch) | A single `brew install a b c` can silently skip later packages if one fails. Installing individually isolates failures. |
+| `exit 0` in fetch script regardless of bootstrap result | A non-zero exit propagates to `cloud-final.service` and marks cloud-init as failed, which is misleading — individual module logs are the real signal. |
+| Claude Code detected via `~/.local/bin` + NVM PATH | The native installer puts the binary at `~/.local/bin/claude`, not on the npm PATH. Both locations must be checked. |
+| zsh plugins via oh-my-zsh custom dir, not brew | Brew-installed zsh plugins need extra `.zshrc` wiring and can conflict with oh-my-zsh's plugin loader. Cloning into `$ZSH_CUSTOM/plugins/` just works. |
+| Swap created by cloud-init, not a module | Swap must exist before brew/sdkman/nvm installs exhaust RAM on small instances. cloud-init creates it early in boot, before any module runs. |
+
+---
+
 ## Security notes
 
 - Docker GPG key is fetched over HTTPS to `/etc/apt/keyrings/docker.asc` with `Signed-By:` pinning — no `apt-key add`, no `curl | bash`
