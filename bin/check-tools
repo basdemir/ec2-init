@@ -192,16 +192,17 @@ CODEX_VER="$(sudo -u "${BREW_USER}" HOME="/home/${BREW_USER}" bash -c "
 # ── Claude Code ───────────────────────────────────────────────────────────────
 hdr "Claude Code"
 CLAUDE_VER="$(sudo -u "${BREW_USER}" HOME="/home/${BREW_USER}" bash -c "
+    export PATH=\"/home/${BREW_USER}/.local/bin:\${PATH}\"
     export NVM_DIR=\"${NVM_DIR}\"
-    source \"\${NVM_DIR}/nvm.sh\"
-    # claude --version may exit non-zero or write to stderr — capture both
+    [ -s \"\${NVM_DIR}/nvm.sh\" ] && source \"\${NVM_DIR}/nvm.sh\"
     claude --version 2>&1 || true
 " 2>/dev/null | head -1)"
 
 # Also check if the binary simply exists (version flag unreliable on some builds)
 CLAUDE_BIN="$(sudo -u "${BREW_USER}" HOME="/home/${BREW_USER}" bash -c "
+    export PATH=\"/home/${BREW_USER}/.local/bin:\${PATH}\"
     export NVM_DIR=\"${NVM_DIR}\"
-    source \"\${NVM_DIR}/nvm.sh\"
+    [ -s \"\${NVM_DIR}/nvm.sh\" ] && source \"\${NVM_DIR}/nvm.sh\"
     command -v claude 2>/dev/null
 " 2>/dev/null)"
 

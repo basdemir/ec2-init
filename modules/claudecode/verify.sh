@@ -12,16 +12,18 @@ NVM_DIR="${USER_HOME}/.nvm"
 log_info "Verifying Claude Code"
 
 CLAUDE_BIN="$(sudo -u "${BREW_USER}" HOME="${USER_HOME}" bash -c "
+    export PATH=\"${USER_HOME}/.local/bin:\${PATH}\"
     export NVM_DIR=\"${NVM_DIR}\"
-    source \"\${NVM_DIR}/nvm.sh\"
+    [ -s \"\${NVM_DIR}/nvm.sh\" ] && source \"\${NVM_DIR}/nvm.sh\"
     command -v claude 2>/dev/null
 ")"
 
 [[ -n "${CLAUDE_BIN}" ]] || { log_error "claude command not found"; exit 1; }
 
 CLAUDE_VER="$(sudo -u "${BREW_USER}" HOME="${USER_HOME}" bash -c "
+    export PATH=\"${USER_HOME}/.local/bin:\${PATH}\"
     export NVM_DIR=\"${NVM_DIR}\"
-    source \"\${NVM_DIR}/nvm.sh\"
+    [ -s \"\${NVM_DIR}/nvm.sh\" ] && source \"\${NVM_DIR}/nvm.sh\"
     claude --version 2>&1 || true
 " | head -1)"
 

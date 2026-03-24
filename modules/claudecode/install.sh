@@ -26,8 +26,9 @@ log_info "Starting Claude Code installation"
 
 # ── Check if already installed ────────────────────────────────────────────────
 ALREADY_INSTALLED="$(sudo -u "${BREW_USER}" HOME="${USER_HOME}" bash -c "
+    export PATH=\"${USER_HOME}/.local/bin:\${PATH}\"
     export NVM_DIR=\"${NVM_DIR}\"
-    source \"\${NVM_DIR}/nvm.sh\"
+    [ -s \"\${NVM_DIR}/nvm.sh\" ] && source \"\${NVM_DIR}/nvm.sh\"
     command -v claude 2>/dev/null
 " 2>/dev/null || true)"
 
