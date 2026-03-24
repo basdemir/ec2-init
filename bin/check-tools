@@ -194,9 +194,22 @@ hdr "Claude Code"
 CLAUDE_VER="$(sudo -u "${BREW_USER}" HOME="/home/${BREW_USER}" bash -c "
     export NVM_DIR=\"${NVM_DIR}\"
     source \"\${NVM_DIR}/nvm.sh\"
-    claude --version 2>/dev/null
+    # claude --version may exit non-zero or write to stderr — capture both
+    claude --version 2>&1 || true
+" 2>/dev/null | head -1)"
+
+# Also check if the binary simply exists (version flag unreliable on some builds)
+CLAUDE_BIN="$(sudo -u "${BREW_USER}" HOME="/home/${BREW_USER}" bash -c "
+    export NVM_DIR=\"${NVM_DIR}\"
+    source \"\${NVM_DIR}/nvm.sh\"
+    command -v claude 2>/dev/null
 " 2>/dev/null)"
-[[ -n "${CLAUDE_VER}" ]] && ok "claude: ${CLAUDE_VER}" || fail "claude: not installed"
+
+if [[ -n "${CLAUDE_BIN}" ]]; then
+    ok "claude: ${CLAUDE_VER:-installed}  ${YELLOW}(${CLAUDE_BIN})${RESET}"
+else
+    fail "claude: not installed"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
