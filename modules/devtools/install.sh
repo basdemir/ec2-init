@@ -35,13 +35,26 @@ retry 3 sudo -u "${BREW_USER}" \
     HOME="/home/${BREW_USER}" \
     "${BREW_BIN}" update --quiet
 
-# ── Install packages ──────────────────────────────────────────────────────────
-# brew install is idempotent — already-installed formulae are skipped
-# shellcheck disable=SC2086
-log_info "Installing packages (brew install)"
-retry 3 sudo -u "${BREW_USER}" \
-    HOME="/home/${BREW_USER}" \
-    "${BREW_BIN}" install --quiet ${BREW_PACKAGES}
+# ── Install packages one by one ───────────────────────────────────────────────
+# Installing individually means one failure doesn't silently skip the rest,
+# and the error is clearly attributed to the specific formula.
+FAIL=0
+for formula in ${BREW_PACKAGES}; do
+    log_info "Installing: ${formula}"
+    if retry 3 sudo -u "${BREW_USER}" \
+        HOME="/home/${BREW_USER}" \
+        "${BREW_BIN}" install --quiet "${formula}"; then
+        log_info "${formula}: OK"
+    else
+        log_error "${formula}: FAILED"
+        FAIL=1
+    fi
+done
+
+if [[ "${FAIL}" -eq 1 ]]; then
+    log_error "One or more packages failed to install"
+    exit 1
+fi
 
 # ── fzf shell integration ─────────────────────────────────────────────────────
 FZF_INSTALL="${BREW_PREFIX}/opt/fzf/install"
