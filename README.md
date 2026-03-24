@@ -1,22 +1,37 @@
 # ec2-init
 
-Modular, idempotent EC2 bootstrap system for Ubuntu instances. Runs automatically at first boot via cloud-init.
+Modular, idempotent EC2 bootstrap system for Ubuntu instances. Triggered automatically at first boot via cloud-init — no manual steps required after launch.
 
-**Installs:** Docker · zsh · oh-my-zsh · Homebrew (Linuxbrew) · developer tools
+---
+
+## What gets installed
+
+| Module | What it installs | How |
+|---|---|---|
+| `base` | curl, wget, vim, git, zip, build-essential, jq, htop, tree… | apt |
+| `docker` | Docker CE, docker-compose-plugin, docker-buildx-plugin | apt (official repo) |
+| `python` | python3, pip, venv, dev headers | apt |
+| `zsh` | zsh, set as default shell | apt |
+| `ohmyzsh` | oh-my-zsh + custom plugins (zsh-autosuggestions, zsh-syntax-highlighting) | git |
+| `brew` | Homebrew (Linuxbrew) at `/home/linuxbrew/.linuxbrew` | official installer |
+| `devtools` | fzf, ripgrep, bat, lazygit, git-delta, go, gh… | brew |
+| `sdkman` | SDKMAN + Temurin JDK 25 | sdkman installer |
+| `nvm` | NVM + Node.js 24 LTS | nvm installer |
+| `codex` | OpenAI Codex CLI (`@openai/codex`) | npm |
+| `claudecode` | Claude Code CLI | official installer |
 
 ---
 
 ## Quick start
 
-```bash
-# Clone to the standard location
-git clone https://github.com/basdemir/ec2-init.git /opt/ec2-init
+**Automatic** — paste `cloud-init/user-data.yml` as EC2 user data when launching an instance. The repo is cloned and bootstrap runs on first boot with no further action.
 
-# Run with a profile
+**Manual** — on a running instance:
+
+```bash
+git clone https://github.com/basdemir/ec2-init.git /opt/ec2-init
 sudo /opt/ec2-init/bin/bootstrap --manifest full-dev
 ```
-
-Or paste `cloud-init/user-data.yml` as EC2 user data — it clones the repo and runs bootstrap automatically on first boot.
 
 ---
 
@@ -24,11 +39,32 @@ Or paste `cloud-init/user-data.yml` as EC2 user data — it clones the repo and 
 
 | Profile | Modules | Use case |
 |---|---|---|
-| `minimal` | docker, zsh | Utility / monitoring instances |
-| `backend` | + ohmyzsh, brew, devtools (lean) | API servers, CI runners |
-| `full-dev` | + full brew toolset | Developer workstations |
+| `minimal` | base, docker, zsh | Utility / monitoring instances |
+| `backend` | + python, ohmyzsh, brew, devtools, sdkman, nvm | API servers, CI runners |
+| `full-dev` | + codex, claudecode | Developer workstations |
 
-Pass `--manifest <name>` to select a profile.
+Select a profile with `--manifest <name>`.
+
+---
+
+## How it works
+
+```
+EC2 launch
+  └── cloud-init: install git + curl, create 4 GB swap
+        └── clone github.com/basdemir/ec2-init → /opt/ec2-init
+              └── bin/bootstrap --manifest full-dev
+                    └── for each module in MODULE_LIST:
+                          ├── marker exists? → skip
+                          ├── run modules/<name>/install.sh
+                          ├── run modules/<name>/verify.sh
+                          └── write /var/lib/ec2-init/markers/<name>.done
+```
+
+- **Idempotent** — marker files prevent re-runs; safe to run twice
+- **Non-fatal failures** — a failed module is logged but doesn't abort others
+- **User context** — apt/systemctl run as root; brew/nvm/sdkman run as `ubuntu`
+- **Logs** — `/var/log/ec2-init/bootstrap.log` (aggregate) + `/var/log/ec2-init/<module>.log`
 
 ---
 
@@ -36,60 +72,64 @@ Pass `--manifest <name>` to select a profile.
 
 ```
 bin/
-  bootstrap       Main orchestrator
-  run-module      Debug: run a single module
+  bootstrap             Main orchestrator (--manifest, --force)
+  run-module            Debug: run a single module standalone
 
 lib/
-  log.sh          Logging (log_info / log_warn / log_error / log_section)
-  idempotency.sh  Marker file helpers (marker_exists / marker_write / marker_clear)
-  net.sh          retry(), wait_for_network(), download_verified()
-  user.sh         run_as_user() — sudo wrapper for non-root operations
-  os.sh           get_distro_codename(), get_distro_id()
+  log.sh                log_info / log_warn / log_error / log_section
+  idempotency.sh        marker_exists / marker_write / marker_clear
+  net.sh                retry() / wait_for_network() / download_verified()
+  user.sh               run_as_user() — sudo wrapper for non-root ops
+  os.sh                 OS/distro detection
 
 modules/
   <name>/
-    install.sh    Install logic (runs as root; brew ops use sudo -u ubuntu)
-    verify.sh     Post-install verification
+    install.sh          Install logic
+    verify.sh           Post-install verification
 
 manifests/
-  minimal.env     }
-  backend.env     } Sourced as bash — set MODULE_LIST and per-module variables
-  full-dev.env    }
+  minimal.env           }
+  backend.env           } Sourced as bash — define MODULE_LIST + per-module vars
+  full-dev.env          }
+  test-container.env    For Docker-based local testing (no docker module)
 
 config/
-  zshrc           .zshrc template (%%PLACEHOLDER%% substitution)
-  docker-daemon.json
+  zshrc                 .zshrc template (%%PLACEHOLDER%% substitution)
+  docker-daemon.json    log-driver, live-restore, overlay2
 
 cloud-init/
-  user-data.yml   Primary cloud-init entry point (recommended)
-  user-data.sh    Bash shebang fallback
+  user-data.yml         Primary entry point — thin wrapper, all logic in repo
+  user-data.sh          Bash shebang fallback
 
 systemd/
-  ec2-bootstrap.service   Optional one-shot retry-on-reboot unit
+  ec2-bootstrap.service One-shot retry-on-reboot unit (optional)
 
 tests/
-  verify-all.sh   Run all verify steps for a manifest
+  verify-all.sh         Run all verify.sh steps for a manifest
+  test-in-docker.sh     Clean-room install test inside a fresh Ubuntu container
 ```
 
 ---
 
-## How it works
+## Adding packages
 
-1. cloud-init clones this repo to `/opt/ec2-init` and calls `bin/bootstrap --manifest <profile>`
-2. The manifest is sourced as bash — it sets `MODULE_LIST` and per-module variables
-3. For each module, bootstrap checks `/var/lib/ec2-init/markers/<module>.done`
-   - If the marker exists → skip (idempotent)
-   - Otherwise → run `install.sh`, then `verify.sh`, then write the marker
-4. Failures are logged but don't abort other modules; exit code accumulates
+### apt package → `modules/base/install.sh`
 
-**Logs:** `/var/log/ec2-init/bootstrap.log` (aggregate) + `/var/log/ec2-init/<module>.log`
-**Markers:** `/var/lib/ec2-init/markers/`
+```bash
+retry 3 apt-get install -y -q \
+    ...
+    your-package        # ← add here
+```
+
+### brew formula → `manifests/*.env`
+
+```bash
+BREW_PACKAGES="fzf ripgrep bat ... your-formula"   # ← add here
+```
 
 ---
 
 ## Adding a module
-
-1. Create the module directory and scripts:
 
 ```bash
 mkdir -p modules/mymodule
@@ -105,8 +145,8 @@ source "${REPO_ROOT}/lib/log.sh"
 source "${REPO_ROOT}/lib/net.sh"
 
 log_info "Installing mymodule"
-# ... your install logic ...
-log_info "mymodule installation complete"
+# ... install logic ...
+log_info "mymodule complete"
 ```
 
 **`modules/mymodule/verify.sh`**
@@ -117,86 +157,36 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${REPO_ROOT}/lib/log.sh"
 
-log_info "Verifying mymodule"
 command -v mytool >/dev/null 2>&1 || { log_error "mytool not found"; exit 1; }
 log_info "mymodule OK: $(mytool --version)"
 ```
-
-2. Make them executable:
 
 ```bash
 chmod +x modules/mymodule/install.sh modules/mymodule/verify.sh
 ```
 
-3. Add the module to the relevant manifests:
+Then add `mymodule` to `MODULE_LIST` in the relevant manifests, and optionally add module-specific variables:
 
 ```bash
 # manifests/full-dev.env
 MODULE_LIST="
-docker
-zsh
-ohmyzsh
-brew
-devtools
-mymodule       # <-- add here
+...
+mymodule
 "
-
-# Optionally add module-specific variables
 MYMODULE_VERSION="1.2.3"
-```
-
-4. Test it standalone:
-
-```bash
-sudo /opt/ec2-init/bin/run-module mymodule
 ```
 
 ---
 
 ## Removing a module
 
-1. Remove it from any manifests that include it:
-
 ```bash
-# manifests/full-dev.env — delete the line
-```
-
-2. Delete the module directory:
-
-```bash
+# 1. Remove from manifests
+# 2. Delete module directory
 rm -rf modules/mymodule
-```
 
-3. Clear the marker if the module was previously installed (so a re-run doesn't skip a now-gone module):
-
-```bash
+# 3. Clear the marker on any already-provisioned instances
 sudo rm -f /var/lib/ec2-init/markers/mymodule.done
-```
-
----
-
-## Adding a manifest (profile)
-
-Create `manifests/<name>.env`:
-
-```bash
-# manifests/staging.env
-BOOTSTRAP_USER="ubuntu"
-BREW_PREFIX="/home/linuxbrew/.linuxbrew"
-
-MODULE_LIST="
-docker
-zsh
-"
-
-DOCKER_VERSION=""
-ZSH_SET_DEFAULT_SHELL="true"
-```
-
-Run it with:
-
-```bash
-sudo /opt/ec2-init/bin/bootstrap --manifest staging
 ```
 
 ---
@@ -204,16 +194,44 @@ sudo /opt/ec2-init/bin/bootstrap --manifest staging
 ## Re-running / forcing reinstall
 
 ```bash
-# Re-run a single module (clears its marker first)
+# Re-run one module
 sudo rm /var/lib/ec2-init/markers/devtools.done
 sudo /opt/ec2-init/bin/bootstrap --manifest full-dev
 
-# Force ALL modules to re-run (ignores all markers)
+# Force ALL modules (ignore all markers)
 sudo /opt/ec2-init/bin/bootstrap --manifest full-dev --force
 
-# Run and verify a single module interactively
-sudo /opt/ec2-init/bin/run-module brew both
+# Run a single module interactively
+sudo /opt/ec2-init/bin/run-module brew install
 sudo /opt/ec2-init/bin/run-module docker verify
+```
+
+---
+
+## Testing
+
+### Static analysis
+```bash
+sudo apt-get install -y shellcheck
+shellcheck bin/bootstrap bin/run-module lib/*.sh modules/*/install.sh modules/*/verify.sh
+```
+
+### Idempotency — on this machine
+```bash
+# Verify current state
+sudo bash tests/verify-all.sh --manifest full-dev
+
+# Full run (all modules already marked → should skip everything)
+sudo /opt/ec2-init/bin/bootstrap --manifest full-dev
+```
+
+### Clean-room — Docker container
+Simulates a first-boot install in a fresh Ubuntu 24.04 container (excludes the `docker` module which requires systemd):
+
+```bash
+sudo bash tests/test-in-docker.sh
+# or with a specific manifest:
+sudo bash tests/test-in-docker.sh --manifest test-container
 ```
 
 ---
@@ -221,7 +239,7 @@ sudo /opt/ec2-init/bin/run-module docker verify
 ## Debugging
 
 ```bash
-# Check cloud-init status
+# Cloud-init status
 cloud-init status --long
 
 # Aggregate bootstrap log
@@ -230,11 +248,11 @@ tail -100 /var/log/ec2-init/bootstrap.log
 # Per-module log
 cat /var/log/ec2-init/brew.log
 
-# Which modules completed successfully
+# Which modules completed
 ls /var/lib/ec2-init/markers/
 
 # Run all verify steps
-sudo /opt/ec2-init/tests/verify-all.sh --manifest full-dev
+sudo bash /opt/ec2-init/tests/verify-all.sh --manifest full-dev
 ```
 
 ---
@@ -243,32 +261,37 @@ sudo /opt/ec2-init/tests/verify-all.sh --manifest full-dev
 
 | Variable | Default | Description |
 |---|---|---|
-| `BOOTSTRAP_USER` | `ubuntu` | Non-root user for brew/ohmyzsh operations |
-| `BREW_PREFIX` | `/home/linuxbrew/.linuxbrew` | Homebrew prefix |
-| `MODULE_LIST` | _(required)_ | Newline or space-separated list of modules to run |
-| `DOCKER_VERSION` | `""` (latest) | Pin a specific Docker CE version (e.g. `5:29.3.0-1~ubuntu.24.04~noble`) |
+| `BOOTSTRAP_USER` | `ubuntu` | Non-root user for brew / nvm / sdkman operations |
+| `BREW_PREFIX` | `/home/linuxbrew/.linuxbrew` | Homebrew install prefix |
+| `MODULE_LIST` | _(required)_ | Newline/space-separated list of modules to run |
+| `DOCKER_VERSION` | `""` (latest) | Pin Docker CE version e.g. `5:29.3.0-1~ubuntu.24.04~noble` |
 | `ZSH_SET_DEFAULT_SHELL` | `true` | Set zsh as default shell for `BOOTSTRAP_USER` |
 | `OHMYZSH_THEME` | `bira` | oh-my-zsh theme |
-| `OHMYZSH_PLUGINS` | `git` | Space-separated oh-my-zsh plugins |
-| `BREW_PACKAGES` | _(lean set)_ | Space-separated list of brew formulae |
-| `BREW_INSTALL_SHA256` | `""` | Pin the Homebrew installer by SHA256 (leave empty for latest) |
+| `OHMYZSH_PLUGINS` | `git` | Space-separated plugin list; custom plugins are git-cloned automatically |
+| `BREW_PACKAGES` | _(see manifest)_ | Space-separated brew formulae |
+| `BREW_INSTALL_SHA256` | `""` | Pin Homebrew installer SHA256 for reproducible builds |
+| `PYTHON_EXTRA_PACKAGES` | `""` | Extra pip packages to install system-wide |
+| `SDKMAN_JAVA_VERSION` | `25-tem` | Temurin JDK version; run `sdk list java` for identifiers |
+| `NVM_VERSION` | `v0.40.1` | NVM installer version |
+| `NODE_VERSION` | `24` | Node.js major version; nvm resolves to latest patch |
 
 ---
 
 ## Security notes
 
-- Docker GPG key is downloaded to `/etc/apt/keyrings/docker.asc` and pinned via `Signed-By:` — not piped to `apt-key`
-- The Homebrew installer is downloaded to `/tmp` first and then executed — not piped directly to bash
-- Homebrew always runs as `${BOOTSTRAP_USER}` — never as root
-- Never put secrets in cloud-init user data (readable via EC2 metadata endpoint). Use SSM Parameter Store or Secrets Manager instead
+- Docker GPG key is fetched over HTTPS to `/etc/apt/keyrings/docker.asc` with `Signed-By:` pinning — no `apt-key add`, no `curl | bash`
+- Homebrew, NVM, SDKMAN, and Claude Code installers are downloaded to `/tmp` first, then executed — never piped directly to bash
+- Homebrew, NVM, SDKMAN, and npm always run as `${BOOTSTRAP_USER}` — never as root
+- Never put secrets in cloud-init user data — it is readable via the EC2 metadata endpoint (`169.254.169.254`). Use SSM Parameter Store or Secrets Manager
 
 ---
 
 ## Evolution path
 
-| Stage | Approach |
+| Stage | What changes |
 |---|---|
-| **Now** | Bootstrap from GitHub on first boot (~10 min cold start) |
-| **S3-hosted** | `aws s3 cp s3://bucket/ec2-init.tar.gz` — removes GitHub dependency for private VPCs |
-| **Packer AMI** | Run `bin/bootstrap` inside a Packer build; markers are pre-written; boot time drops to ~30s |
-| **CI validation** | `bash -n` + `shellcheck` on every PR; `packer validate` for AMI builds |
+| **Now** | Clone from GitHub on first boot (~10–15 min cold start) |
+| **S3-hosted** | `aws s3 cp s3://bucket/ec2-init.tar.gz` — no GitHub dependency, works in private VPCs |
+| **Packer AMI** | Run `bin/bootstrap` inside Packer; markers pre-written; boot time ~30 s |
+| **CI validation** | `shellcheck` + `bash -n` on every PR; `packer validate` for AMI pipeline |
+| **Multi-env** | `manifests/prod.env` strips dev tools; `manifests/ci-runner.env` installs only Docker + Go |
