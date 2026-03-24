@@ -1,0 +1,51 @@
+# .zshrc — managed by ec2-init bootstrap
+# Regenerated from config/zshrc template. Local changes will be overwritten on re-provision.
+
+# ── oh-my-zsh ─────────────────────────────────────────────────────────────────
+export ZSH="%%OMZ_DIR%%"
+
+ZSH_THEME="%%ZSH_THEME%%"
+
+# Uncomment to enable command auto-correction
+# ENABLE_CORRECTION="true"
+
+plugins=(%%ZSH_PLUGINS%%)
+
+source $ZSH/oh-my-zsh.sh
+
+# ── Homebrew (Linuxbrew) ──────────────────────────────────────────────────────
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+# ── History ───────────────────────────────────────────────────────────────────
+HISTSIZE=10000
+SAVEHIST=10000
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+setopt SHARE_HISTORY
+
+# ── User PATH additions ───────────────────────────────────────────────────────
+export PATH="$HOME/.local/bin:$PATH"
+
+# ── Go (installed via brew) ───────────────────────────────────────────────────
+# $GOPATH defaults to $HOME/go — add its bin dir so 'go install'-ed tools work
+export GOPATH="$HOME/go"
+export PATH="$GOPATH/bin:$PATH"
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+export EDITOR="vim"
+export VISUAL="vim"
+
+# ── NVM ───────────────────────────────────────────────────────────────────────
+# Guarded: silent no-op if nvm is not installed
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
+
+# ── SDKMAN ────────────────────────────────────────────────────────────────────
+# Guarded: silent no-op if sdkman is not installed
+export SDKMAN_DIR="$HOME/.sdkman"
+[[ -s "$SDKMAN_DIR/bin/sdkman-init.sh" ]] && source "$SDKMAN_DIR/bin/sdkman-init.sh"
+
+# ── Local overrides ───────────────────────────────────────────────────────────
+# Add machine-specific config below this line (won't be overwritten by bootstrap)
+[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local

@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# bin/bootstrap - Main EC2 bootstrap orchestrator
+#
+# Usage:
+#   bootstrap --manifest <profile>  [--force]
+#
+# --manifest  Name of the profile to apply (matches manifests/<name>.env)
+# --force     Ignore existing markers and re-run all modules
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
+
+# ── Source libraries ──────────────────────────────────────────────────────────
+source "${REPO_ROOT}/lib/log.sh"
+source "${REPO_ROOT}/lib/idempotency.sh"
+source "${REPO_ROOT}/lib/net.sh"
+source "${REPO_ROOT}/lib/user.sh"
+source "${REPO_ROOT}/lib/os.sh"
+
+_log_init
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+MANIFEST="full-dev"
+FORCE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --manifest) MANIFEST="$2"; shift 2 ;;
+        --force)    FORCE=true; shift ;;
+        -h|--help)
+            echo "Usage: bootstrap --manifest <profile> [--force]"
+            echo "Profiles: $(ls "${REPO_ROOT}/manifests/"*.env 2>/dev/null | xargs -n1 basename | sed 's/\.env//' | tr '\n' ' ')"
+            exit 0
+            ;;
+        *) log_error "Unknown argument: $1"; exit 1 ;;
+    esac
+done
+
+# ── Validate manifest ─────────────────────────────────────────────────────────
+MANIFEST_FILE="${REPO_ROOT}/manifests/${MANIFEST}.env"
+if [[ ! -f "${MANIFEST_FILE}" ]]; then
+    log_error "Manifest not found: ${MANIFEST_FILE}"
+    log_error "Available: $(ls "${REPO_ROOT}/manifests/"*.env 2>/dev/null | xargs -n1 basename | tr '\n' ' ')"
+    exit 1
+fi
+
+log_section "EC2 Bootstrap starting"
+log_info "Manifest : ${MANIFEST}"
+log_info "Repo     : ${REPO_ROOT}"
+log_info "Host     : $(hostname -f 2>/dev/null || hostname)"
+log_info "Kernel   : $(uname -r)"
+log_info "OS       : $(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '"')"
+log_info "Force    : ${FORCE}"
+
+# ── Source the manifest ───────────────────────────────────────────────────────
+# shellcheck source=/dev/null
+source "${MANIFEST_FILE}"
+log_info "Modules  : $(echo "${MODULE_LIST}" | tr -s '[:space:]' ' ' | xargs)"
+
+# ── Wait for network before any module runs ───────────────────────────────────
+wait_for_network
+
+# ── Module execution loop ─────────────────────────────────────────────────────
+EXIT_CODE=0
+
+while IFS= read -r module; do
+    # Skip blank lines and comments
+    [[ -z "${module}" || "${module}" =~ ^[[:space:]]*# ]] && continue
+    module="$(echo "${module}" | tr -d '[:space:]')"
+    [[ -z "${module}" ]] && continue
+
+    LOG_FILE="${LOG_DIR}/bootstrap.log"   # reset to aggregate log between modules
+    log_section "Module: ${module}"
+
+    # Check idempotency marker
+    if [[ "${FORCE}" == "false" ]] && marker_exists "${module}"; then
+        log_info "Module '${module}' already installed (marker found). Skipping."
+        continue
+    fi
+
+    install_script="${REPO_ROOT}/modules/${module}/install.sh"
+    verify_script="${REPO_ROOT}/modules/${module}/verify.sh"
+
+    if [[ ! -f "${install_script}" ]]; then
+        log_error "No install.sh found for module '${module}' at ${install_script}"
+        EXIT_CODE=1
+        continue
+    fi
+
+    # Per-module log file (also tees to aggregate)
+    module_log="${LOG_DIR}/${module}.log"
+
+    # Run install — tee output to both per-module and aggregate logs
+    # Note: we do NOT use set -e here; failure is handled via exit code check
+    if bash "${install_script}" 2>&1 | tee -a "${module_log}" "${LOG_FILE}"; then
+        install_ok=true
+    else
+        install_ok=false
+    fi
+
+    if [[ "${install_ok}" == "false" ]]; then
+        log_error "Module '${module}': INSTALL FAILED (check ${module_log})"
+        EXIT_CODE=1
+        continue
+    fi
+
+    # Run verify if present
+    if [[ -f "${verify_script}" ]]; then
+        if bash "${verify_script}" 2>&1 | tee -a "${module_log}" "${LOG_FILE}"; then
+            marker_write "${module}"
+            log_info "Module '${module}': SUCCESS"
+        else
+            log_error "Module '${module}': VERIFY FAILED (check ${module_log})"
+            EXIT_CODE=1
+        fi
+    else
+        marker_write "${module}"
+        log_info "Module '${module}': SUCCESS (no verify step)"
+    fi
+done <<< "${MODULE_LIST}"
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+log_section "Bootstrap complete"
+log_info "Exit code : ${EXIT_CODE}"
+log_info "Markers   : $(ls "${MARKER_DIR}"/*.done 2>/dev/null | xargs -n1 basename 2>/dev/null | tr '\n' ' ' || echo 'none')"
+log_info "Logs      : ${LOG_DIR}/"
+
+exit "${EXIT_CODE}"

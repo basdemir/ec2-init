@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# bin/run-module - Run a single module for debugging or manual re-provisioning
+#
+# Usage:
+#   run-module <module-name> [install|verify|both]
+#
+# Examples:
+#   run-module docker
+#   run-module brew install
+#   run-module devtools verify
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
+
+source "${REPO_ROOT}/lib/log.sh"
+source "${REPO_ROOT}/lib/idempotency.sh"
+source "${REPO_ROOT}/lib/net.sh"
+source "${REPO_ROOT}/lib/user.sh"
+source "${REPO_ROOT}/lib/os.sh"
+
+_log_init
+
+MODULE="${1:-}"
+ACTION="${2:-both}"   # install | verify | both
+
+if [[ -z "${MODULE}" ]]; then
+    echo "Usage: run-module <module> [install|verify|both]"
+    echo ""
+    echo "Available modules:"
+    for d in "${REPO_ROOT}/modules"/*/; do
+        echo "  $(basename "${d}")"
+    done
+    exit 1
+fi
+
+if [[ ! -d "${REPO_ROOT}/modules/${MODULE}" ]]; then
+    echo "[ERROR] Unknown module: ${MODULE}" >&2
+    exit 1
+fi
+
+# Source the default manifest so modules have their variables available
+DEFAULT_MANIFEST="${REPO_ROOT}/manifests/full-dev.env"
+if [[ -f "${DEFAULT_MANIFEST}" ]]; then
+    # shellcheck source=/dev/null
+    source "${DEFAULT_MANIFEST}"
+    log_info "Sourced manifest: full-dev"
+fi
+
+log_info "run-module: module=${MODULE} action=${ACTION}"
+
+run_step() {
+    local step="$1"
+    local script="${REPO_ROOT}/modules/${MODULE}/${step}.sh"
+
+    if [[ ! -f "${script}" ]]; then
+        log_warn "No ${step}.sh for module '${MODULE}'"
+        return 0
+    fi
+
+    log_section "${MODULE}: ${step}"
+    bash "${script}"
+}
+
+case "${ACTION}" in
+    install) run_step install ;;
+    verify)  run_step verify ;;
+    both)
+        run_step install
+        run_step verify
+        marker_write "${MODULE}"
+        ;;
+    *)
+        echo "[ERROR] Unknown action '${ACTION}'. Use: install, verify, or both" >&2
+        exit 1
+        ;;
+esac
+
+log_info "run-module: done (module=${MODULE} action=${ACTION})"

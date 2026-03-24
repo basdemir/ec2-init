@@ -1,0 +1,31 @@
+[Unit]
+Description=EC2 Instance Bootstrap
+Documentation=https://github.com/basdemir/ec2-init
+# Run after network is fully up and cloud-init has completed its own work
+After=network-online.target cloud-init.service
+Wants=network-online.target
+# Only run if the completion marker does not exist
+# Delete /var/lib/ec2-init/bootstrap.complete to trigger a re-run on next boot
+ConditionPathExists=!/var/lib/ec2-init/bootstrap.complete
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Adjust manifest as needed
+Environment="EC2_INIT_MANIFEST=full-dev"
+
+ExecStart=/opt/ec2-init/bin/bootstrap --manifest %E{EC2_INIT_MANIFEST}
+ExecStartPost=/bin/bash -c 'touch /var/lib/ec2-init/bootstrap.complete'
+
+StandardOutput=append:/var/log/ec2-init/bootstrap.log
+StandardError=append:/var/log/ec2-init/bootstrap.log
+
+# Allow up to 30 minutes for a cold install
+TimeoutStartSec=1800
+
+# On failure, do not auto-restart (let the operator investigate)
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,67 @@
+#cloud-config
+# EC2 Bootstrap — cloud-init user data (YAML format, recommended)
+#
+# This file should be kept thin. All real logic lives in the ec2-init repo.
+# Customise EC2_INIT_REPO, EC2_INIT_BRANCH, and EC2_INIT_MANIFEST below.
+#
+# Usage:
+#   aws ec2 run-instances \
+#     --user-data file://cloud-init/user-data.yml \
+#     --image-id ami-XXXX ...
+
+# ── Packages needed before bootstrap can clone the repo ───────────────────────
+packages:
+  - git
+  - curl
+
+package_update: true
+package_upgrade: false
+
+# ── Write the fetch script to disk ────────────────────────────────────────────
+write_files:
+  - path: /usr/local/sbin/ec2-init-fetch.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Fetches (or updates) the ec2-init repo, then hands off to bin/bootstrap.
+      set -euo pipefail
+
+      REPO_URL="${EC2_INIT_REPO:-https://github.com/basdemir/ec2-init.git}"
+      REPO_BRANCH="${EC2_INIT_BRANCH:-main}"
+      MANIFEST="${EC2_INIT_MANIFEST:-full-dev}"
+      INSTALL_DIR="/opt/ec2-init"
+      LOG_FILE="/var/log/ec2-init/fetch.log"
+
+      mkdir -p /var/log/ec2-init
+      exec >> "${LOG_FILE}" 2>&1
+
+      echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Fetching ec2-init (branch=${REPO_BRANCH})"
+
+      if [[ -d "${INSTALL_DIR}/.git" ]]; then
+          git -C "${INSTALL_DIR}" fetch --quiet origin "${REPO_BRANCH}"
+          git -C "${INSTALL_DIR}" reset --hard "origin/${REPO_BRANCH}"
+          echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Repo updated"
+      else
+          git clone --depth 1 --branch "${REPO_BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
+          echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Repo cloned"
+      fi
+
+      chmod +x "${INSTALL_DIR}/bin/bootstrap" "${INSTALL_DIR}/bin/run-module"
+
+      echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting bootstrap (manifest=${MANIFEST})"
+      exec "${INSTALL_DIR}/bin/bootstrap" --manifest "${MANIFEST}"
+
+# ── Run: fetch repo → bootstrap ───────────────────────────────────────────────
+# runcmd runs after all write_files and packages steps are complete.
+# Each command runs in a fresh shell; env vars set here are NOT exported to child processes.
+runcmd:
+  - ["/usr/local/sbin/ec2-init-fetch.sh"]
+
+# ── Final status message (visible in /var/log/cloud-init-output.log) ──────────
+final_message: |
+  EC2 bootstrap finished.
+  Bootstrap log : /var/log/ec2-init/bootstrap.log
+  Fetch log     : /var/log/ec2-init/fetch.log
+  Cloud-init log: /var/log/cloud-init-output.log
+  Uptime        : $UPTIME seconds
