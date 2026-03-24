@@ -236,6 +236,20 @@ sudo bash tests/test-in-docker.sh --manifest test-container
 
 ---
 
+## Checking status
+
+After launch, run this to see whether provisioning finished successfully:
+
+```bash
+sudo /opt/ec2-init/bin/status
+# or for a different profile:
+sudo /opt/ec2-init/bin/status --manifest backend
+```
+
+Output shows cloud-init state, a ✓/✗ per module with timestamps, exit code, and the last few log lines. If any module failed, its log tail is printed automatically.
+
+---
+
 ## Debugging
 
 ```bash

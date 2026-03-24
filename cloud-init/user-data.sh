@@ -32,4 +32,8 @@ chmod +x "${INSTALL_DIR}/bin/bootstrap" "${INSTALL_DIR}/bin/run-module"
 
 # ── Hand off to the bootstrap orchestrator ────────────────────────────────────
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting bootstrap (manifest=${MANIFEST})"
-exec "${INSTALL_DIR}/bin/bootstrap" --manifest "${MANIFEST}"
+"${INSTALL_DIR}/bin/bootstrap" --manifest "${MANIFEST}"
+EXIT_CODE=$?
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Bootstrap exited with code ${EXIT_CODE}"
+# Exit 0 regardless — failures are logged in /var/log/ec2-init/ and visible via bin/status
+exit 0
