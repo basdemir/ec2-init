@@ -35,9 +35,9 @@ write_files:
       # Fetches (or updates) the ec2-init repo, then hands off to bin/bootstrap.
       set -euo pipefail
 
-      REPO_URL="${EC2_INIT_REPO:-https://github.com/basdemir/ec2-init.git}"
-      REPO_BRANCH="${EC2_INIT_BRANCH:-main}"
-      MANIFEST="${EC2_INIT_MANIFEST:-full-dev}"
+      REPO_URL="https://github.com/basdemir/ec2-init.git"
+      REPO_BRANCH="main"
+      MANIFEST="full-dev"   # ← change this before launching: minimal | backend | full-dev
       INSTALL_DIR="/opt/ec2-init"
       LOG_FILE="/var/log/ec2-init/fetch.log"
 

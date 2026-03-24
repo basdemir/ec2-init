@@ -9,9 +9,9 @@
 # Output from this script goes to /var/log/cloud-init-output.log automatically.
 set -euo pipefail
 
-REPO_URL="${EC2_INIT_REPO:-https://github.com/basdemir/ec2-init.git}"
-REPO_BRANCH="${EC2_INIT_BRANCH:-main}"
-MANIFEST="${EC2_INIT_MANIFEST:-full-dev}"
+REPO_URL="https://github.com/basdemir/ec2-init.git"
+REPO_BRANCH="main"
+MANIFEST="full-dev"   # ← change this before launching: minimal | backend | full-dev
 INSTALL_DIR="/opt/ec2-init"
 
 # ── Ensure core dependencies ──────────────────────────────────────────────────
