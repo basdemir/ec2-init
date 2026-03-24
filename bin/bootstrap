@@ -55,7 +55,9 @@ log_info "Force    : ${FORCE}"
 
 # ── Source the manifest ───────────────────────────────────────────────────────
 # shellcheck source=/dev/null
+set -a
 source "${MANIFEST_FILE}"
+set +a
 log_info "Modules  : $(echo "${MODULE_LIST}" | tr -s '[:space:]' ' ' | xargs)"
 
 # ── Wait for network before any module runs ───────────────────────────────────
