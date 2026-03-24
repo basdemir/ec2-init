@@ -19,9 +19,11 @@ SOURCES_FILE="/etc/apt/sources.list.d/docker.sources"
 
 log_info "Starting Docker installation"
 
-# ── Detect distro ─────────────────────────────────────────────────────────────
-DISTRO_CODENAME="$(get_distro_codename)"
-DISTRO_ID="$(get_distro_id)"
+# ── Detect distro (source /etc/os-release directly, matches official Docker docs)
+# shellcheck source=/dev/null
+source /etc/os-release
+DISTRO_ID="${ID}"                                        # ubuntu / debian
+DISTRO_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME}}"
 log_info "Detected: ${DISTRO_ID} ${DISTRO_CODENAME}"
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────
@@ -29,9 +31,7 @@ log_info "Installing apt prerequisites"
 retry 3 apt-get update -qq
 retry 3 apt-get install -y -q \
     ca-certificates \
-    curl \
-    gnupg \
-    lsb-release
+    curl
 
 # ── Docker GPG key (not curl|bash, not apt-key add) ───────────────────────────
 install -m 0755 -d "${KEYRING_DIR}"
