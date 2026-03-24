@@ -1,8 +1,13 @@
 # .zshrc — managed by ec2-init bootstrap
 # Regenerated from config/zshrc template. Local changes will be overwritten on re-provision.
 
+# ── Homebrew (Linuxbrew) ──────────────────────────────────────────────────────
+# Must come before oh-my-zsh so plugins (e.g. fzf) can find brew-installed tools
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
 # ── oh-my-zsh ─────────────────────────────────────────────────────────────────
 export ZSH="%%OMZ_DIR%%"
+export FZF_BASE="/home/linuxbrew/.linuxbrew/opt/fzf"
 
 ZSH_THEME="%%ZSH_THEME%%"
 
@@ -12,9 +17,6 @@ ZSH_THEME="%%ZSH_THEME%%"
 plugins=(%%ZSH_PLUGINS%%)
 
 source $ZSH/oh-my-zsh.sh
-
-# ── Homebrew (Linuxbrew) ──────────────────────────────────────────────────────
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 
 # ── History ───────────────────────────────────────────────────────────────────
 HISTSIZE=10000
